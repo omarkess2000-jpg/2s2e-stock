@@ -1,1 +1,1 @@
-# 2s2e-stock
+# stock
