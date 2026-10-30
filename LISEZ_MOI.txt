@@ -1,0 +1,12 @@
+2S2E STOCK — application web installable (PWA)
+
+Contenu :
+- index.html : application (recherche, ajout, modification, suppression)
+- scan code-barres via BarcodeDetector si pris en charge par Chrome Android
+- stockage local sur l'appareil
+- export/import JSON pour transfert entre téléphones
+- manifest + service worker + icônes pour installation PWA
+
+IMPORTANT :
+Pour installer depuis Chrome et utiliser la caméra, le dossier doit être publié sur une adresse HTTPS.
+Ouvrir index.html directement depuis le téléphone (file:// ou content://) ne permet pas l'accès caméra et l'installation PWA.

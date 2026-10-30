@@ -1,0 +1,168 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#1457a6">
+<meta name="description" content="Gestion des emplacements du showroom 2S2E">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<title>2S2E Stock</title>
+<style>
+:root{--blue:#1457a6;--blue2:#0c3974;--bg:#f3f6fb;--ink:#172235;--muted:#66758a;--line:#dce4ef}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:16px system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+header{background:linear-gradient(135deg,var(--blue),var(--blue2));color:white;padding:22px 18px 20px;border-radius:0 0 22px 22px}
+h1{font-size:25px;margin:0 0 4px;letter-spacing:.5px}header p{margin:0;color:#dceaff;font-size:13px}
+main{max-width:720px;margin:auto;padding:16px}
+.card{background:white;border:1px solid var(--line);border-radius:16px;padding:16px;margin:0 0 14px;box-shadow:0 3px 12px #17365d0b}
+h2{font-size:17px;margin:0 0 12px;color:var(--blue2)}
+label{display:block;font-size:13px;font-weight:650;margin:10px 0 5px;color:#39485d}
+input{width:100%;border:1px solid #cbd6e4;border-radius:10px;padding:13px 12px;font:inherit;background:#fff;color:var(--ink);outline:none}
+input:focus{border-color:var(--blue);box-shadow:0 0 0 3px #1457a61c}
+.row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+button,.filebtn{border:0;border-radius:11px;padding:12px 14px;font:700 14px system-ui;cursor:pointer}
+.primary{background:var(--blue);color:white}.secondary{background:#eaf1fb;color:var(--blue2)}.danger{background:#fff0ef;color:#b3261e}
+.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}.actions button{flex:1}
+.searchline{display:flex;gap:8px}.searchline input{min-width:0}.searchline button{white-space:nowrap}
+#results{margin-top:12px}.hint{color:var(--muted);font-size:13px;line-height:1.45}
+.item{border:1px solid var(--line);border-radius:12px;padding:12px;margin-top:9px}
+.item strong{display:block;font-size:16px}.ref{font-size:12px;color:var(--muted);margin:3px 0 8px}
+.location{background:#edf4ff;color:#174a89;padding:8px 10px;border-radius:9px;font-weight:650;font-size:14px}
+.item .actions button{padding:9px;font-size:12px}
+#scanner{width:100%;max-height:300px;background:#111;border-radius:12px;margin-top:10px;display:none}
+.hidden{display:none!important}
+footer{text-align:center;color:var(--muted);font-size:12px;padding:8px 0 24px}
+.status{font-size:12px;color:var(--muted);margin-top:8px}
+@media(max-width:420px){.row{grid-template-columns:1fr}.searchline{flex-wrap:wrap}.searchline button{width:100%}}
+</style>
+</head>
+<body>
+<header><h1>2S2E STOCK</h1><p>Recherche et gestion des emplacements du showroom</p></header>
+<main>
+<section class="card">
+<h2>Rechercher un article</h2>
+<div class="searchline">
+<input id="q" placeholder="Référence ou nom du produit" autocomplete="off">
+<button class="primary" id="searchBtn">RECHERCHER</button>
+</div>
+<div class="actions">
+<button class="secondary" id="scanBtn">▣ Scanner un code-barres</button>
+<button class="secondary" id="installBtn" hidden>Installer l’application</button>
+</div>
+<video id="scanner" playsinline></video>
+<div id="scanStatus" class="status"></div>
+<div id="results"><p class="hint">Saisis une référence ou un nom, puis appuie sur Rechercher. Aucun article n’est affiché avant la recherche.</p></div>
+</section>
+
+<section class="card" id="formCard">
+<h2 id="formTitle">Ajouter un article</h2>
+<input id="editId" type="hidden">
+<label for="ref">Référence / code-barres *</label><input id="ref" placeholder="Ex. LED-001">
+<label for="name">Nom de l’article *</label><input id="name" placeholder="Ex. Spot LED encastrable">
+<div class="row">
+<div><label for="zone">Zone</label><input id="zone" placeholder="Ex. A"></div>
+<div><label for="rayon">Rayon</label><input id="rayon" placeholder="Ex. 02"></div>
+</div>
+<label for="etagere">Étagère</label><input id="etagere" placeholder="Ex. 03">
+<div class="actions">
+<button class="primary" id="saveBtn">ENREGISTRER</button>
+<button class="secondary" id="resetBtn">EFFACER</button>
+</div>
+<p class="hint">Les articles sont enregistrés sur ce téléphone. Aucun prix ni quantité n’est demandé.</p>
+</section>
+
+<section class="card">
+<h2>Transférer les données</h2>
+<p class="hint">Exporte une sauvegarde pour transférer tes articles vers un autre téléphone, ou importe une sauvegarde existante.</p>
+<div class="actions">
+<button class="secondary" id="exportBtn">Exporter la sauvegarde</button>
+<label class="filebtn secondary" style="text-align:center">Importer un fichier<input id="importFile" type="file" accept="application/json" hidden></label>
+</div>
+<p id="dataStatus" class="status"></p>
+</section>
+<footer>2S2E Stock · Données enregistrées localement sur l’appareil</footer>
+</main>
+<script>
+const DBKEY='2s2e_stock_articles_v1';
+let articles=load(), stream=null, detector=null, scanning=false, deferredPrompt=null;
+function load(){try{return JSON.parse(localStorage.getItem(DBKEY)||'[]')}catch(e){return []}}
+function persist(){localStorage.setItem(DBKEY,JSON.stringify(articles))}
+function norm(s){return (s||'').toString().trim().toLocaleLowerCase('fr')}
+function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+function search(){
+ const q=norm(document.getElementById('q').value), box=document.getElementById('results');
+ if(!q){box.innerHTML='<p class="hint">Saisis une référence ou un nom pour lancer la recherche.</p>';return}
+ const found=articles.filter(a=>norm(a.ref).includes(q)||norm(a.name).includes(q));
+ if(!found.length){box.innerHTML='<p class="hint">Aucun article trouvé. Tu peux l’ajouter avec le formulaire ci-dessous.</p>';return}
+ box.innerHTML=found.map(a=>`<div class="item"><strong>${esc(a.name)}</strong><div class="ref">Référence : ${esc(a.ref)}</div><div class="location">Zone ${esc(a.zone||'—')} · Rayon ${esc(a.rayon||'—')} · Étagère ${esc(a.etagere||'—')}</div><div class="actions"><button class="secondary" onclick="editArticle('${a.id}')">Modifier</button><button class="danger" onclick="deleteArticle('${a.id}')">Supprimer</button></div></div>`).join('');
+}
+function clearForm(){
+ ['editId','ref','name','zone','rayon','etagere'].forEach(id=>document.getElementById(id).value='');
+ document.getElementById('formTitle').textContent='Ajouter un article';
+ document.getElementById('saveBtn').textContent='ENREGISTRER';
+}
+function save(){
+ const ref=document.getElementById('ref').value.trim(), name=document.getElementById('name').value.trim();
+ if(!ref||!name){alert('La référence et le nom sont obligatoires.');return}
+ const id=document.getElementById('editId').value||((crypto.randomUUID&&crypto.randomUUID())||String(Date.now()));
+ const duplicate=articles.find(a=>norm(a.ref)===norm(ref)&&a.id!==id);
+ if(duplicate){alert('Cette référence existe déjà. Modifie l’article existant.');return}
+ const a={id,ref,name,zone:document.getElementById('zone').value.trim(),rayon:document.getElementById('rayon').value.trim(),etagere:document.getElementById('etagere').value.trim()};
+ const i=articles.findIndex(x=>x.id===id); if(i>=0)articles[i]=a;else articles.push(a);
+ persist();clearForm();document.getElementById('q').value=ref;search();
+}
+window.editArticle=function(id){
+ const a=articles.find(x=>x.id===id);if(!a)return;
+ document.getElementById('editId').value=a.id;
+ for(const k of ['ref','name','zone','rayon','etagere'])document.getElementById(k).value=a[k]||'';
+ document.getElementById('formTitle').textContent='Modifier un article';
+ document.getElementById('saveBtn').textContent='ENREGISTRER LES MODIFICATIONS';
+ document.getElementById('formCard').scrollIntoView({behavior:'smooth'});
+};
+window.deleteArticle=function(id){
+ if(!confirm('Supprimer cet article ?'))return;
+ articles=articles.filter(a=>a.id!==id);persist();search();
+};
+async function startScan(){
+ const video=document.getElementById('scanner'), status=document.getElementById('scanStatus');
+ if(!('BarcodeDetector' in window)){status.textContent='Scanner automatique non pris en charge par ce navigateur. Tu peux saisir le code dans le champ de recherche.';return}
+ try{
+  const supported=await BarcodeDetector.getSupportedFormats();
+  const formats=['ean_13','ean_8','code_128','code_39','upc_a','upc_e','qr_code'].filter(x=>supported.includes(x));
+  detector=new BarcodeDetector({formats});
+  stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'}},audio:false});
+  video.srcObject=stream;video.style.display='block';await video.play();scanning=true;status.textContent='Pointe la caméra vers le code-barres.';
+  scanFrame();
+ }catch(e){status.textContent='Impossible d’ouvrir la caméra. Vérifie l’autorisation caméra et utilise l’application depuis une adresse HTTPS.';stopScan()}
+}
+async function scanFrame(){
+ if(!scanning)return;
+ const v=document.getElementById('scanner');
+ try{const codes=await detector.detect(v);if(codes.length&&codes[0].rawValue){document.getElementById('q').value=codes[0].rawValue;stopScan();search();document.getElementById('scanStatus').textContent='Code détecté : '+codes[0].rawValue;return}}catch(e){}
+ requestAnimationFrame(scanFrame);
+}
+function stopScan(){scanning=false;if(stream){stream.getTracks().forEach(t=>t.stop());stream=null}const v=document.getElementById('scanner');v.pause();v.srcObject=null;v.style.display='none'}
+document.getElementById('searchBtn').onclick=search;
+document.getElementById('q').addEventListener('keydown',e=>{if(e.key==='Enter')search()});
+document.getElementById('saveBtn').onclick=save;
+document.getElementById('resetBtn').onclick=clearForm;
+document.getElementById('scanBtn').onclick=()=>scanning?stopScan():startScan();
+document.getElementById('exportBtn').onclick=()=>{
+ const blob=new Blob([JSON.stringify({app:'2S2E Stock',version:1,articles},null,2)],{type:'application/json'});
+ const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='2S2E_Stock_sauvegarde.json';a.click();URL.revokeObjectURL(url);
+ document.getElementById('dataStatus').textContent=articles.length+' article(s) exporté(s).';
+};
+document.getElementById('importFile').onchange=async e=>{
+ const f=e.target.files[0];if(!f)return;
+ try{const data=JSON.parse(await f.text()), incoming=Array.isArray(data)?data:data.articles;if(!Array.isArray(incoming))throw Error();
+  const map=new Map(articles.map(a=>[norm(a.ref),a]));
+  incoming.forEach(a=>{if(a&&a.ref&&a.name)map.set(norm(a.ref),{id:a.id||String(Date.now()+Math.random()),ref:String(a.ref),name:String(a.name),zone:a.zone||'',rayon:a.rayon||'',etagere:a.etagere||''})});
+  articles=[...map.values()];persist();document.getElementById('dataStatus').textContent=articles.length+' article(s) disponibles après import.';
+ }catch(err){alert('Fichier de sauvegarde invalide.')}
+ e.target.value='';
+};
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt=e;document.getElementById('installBtn').hidden=false});
+document.getElementById('installBtn').onclick=async()=>{if(!deferredPrompt)return;deferredPrompt.prompt();await deferredPrompt.userChoice;deferredPrompt=null;document.getElementById('installBtn').hidden=true};
+if('serviceWorker' in navigator && location.protocol.startsWith('http'))navigator.serviceWorker.register('./sw.js').catch(()=>{});
+</script>
+</body></html>
